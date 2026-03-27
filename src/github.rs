@@ -14,8 +14,11 @@ async fn check_github() -> Result<GitHubCheck> {
 
     let client = reqwest::Client::new();
 
-    let response = client.get("someurl").header("Cookie", cookie)
-        .send().await?;
+    let response = client
+        .get("someurl")
+        .header("Cookie", cookie)
+        .send()
+        .await?;
 
     let status = response.status().as_u16();
     let body = response.text().await?;

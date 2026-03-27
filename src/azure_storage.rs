@@ -4,11 +4,13 @@ use crate::{found_secrets::SecretCheck, truffle_hog::TrufflehogRawV2AzureStorage
 use anyhow::Result;
 use async_trait::async_trait;
 use azure_core::{
-    credentials::Secret, error::ErrorKind, http::{
+    credentials::Secret,
+    error::ErrorKind,
+    http::{
         ClientOptions, Method, RetryOptions,
         headers::{CONTENT_LENGTH, HeaderName, Headers},
         policies::{Policy, PolicyResult},
-    }
+    },
 };
 use azure_storage_blob::{BlobServiceClient, BlobServiceClientOptions};
 use base64::{Engine, prelude::BASE64_STANDARD};
@@ -273,7 +275,9 @@ impl Policy for SharedKeyAuthorizationPolicy {
             &self.account,
             &Secret::new(self.shared_key.to_string()),
         )
-            .map_err(|err| azure_core::Error::with_message(ErrorKind::Credential, format!("{:?}", err)))?;
+        .map_err(|err| {
+            azure_core::Error::with_message(ErrorKind::Credential, format!("{:?}", err))
+        })?;
         trace!("azure storage auth header: {:?}", &auth_header);
         request.insert_header("authorization", auth_header);
         next[0].send(ctx, request, &next[1..]).await

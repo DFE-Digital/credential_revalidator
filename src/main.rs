@@ -1,13 +1,16 @@
-
 use anyhow::Context;
 use anyhow::Result;
+use azure::AzureCreds;
 use clap::Args;
 use clap::Parser;
 use clap::Subcommand;
 use data_ingester_splunk::splunk::HecEvent;
 use data_ingester_splunk::splunk::Splunk;
 use data_ingester_splunk::splunk::SplunkTrait;
+use found_secrets::SecretCheck;
+use ms_sql_server::MsSqlServerSecret;
 use std::collections::HashMap;
+use std::future::Future;
 use std::path::PathBuf;
 use std::time::Duration;
 use tracing_subscriber::EnvFilter;
@@ -27,7 +30,6 @@ mod report;
 mod slack_webhooks;
 mod truffle_hog;
 use tracing::{debug, info, trace};
-//use crate::found_secrets::SecretCheck;
 
 #[derive(Parser, Debug)]
 struct Cli {
@@ -41,28 +43,32 @@ enum Commands {
     TrufflehogParser(TrufflehogParserArgs),
     TrufflehogParserListDetectors(TrufflehogParserArgs),
     Validator(ValidatorArgs),
+    SqlServer(SqlServerArgs),
+    AzureCredentials(AzureCredentialArgs),
 }
 
 #[derive(Args, Debug)]
 struct TrufflehogParserArgs {
-    #[clap(default_value = ".", help="Directory for trufflehog JSON")]
+    #[clap(short, default_value = ".", help = "Directory for trufflehog JSON")]
     path: PathBuf,
+    #[clap(short, help = "Path to repo_details.csv")]
+    repo_details_path: PathBuf,
 }
 
 #[derive(Args, Debug)]
 struct CsvParserArgs {
-    #[clap(env, help = "http-inputs-foobar.splunkcloud.com")]
+    #[clap(long, env, help = "http-inputs-foobar.splunkcloud.com")]
     splunk_hec_host: String,
-    #[clap(env)]
+    #[clap(long, env)]
     splunk_hec_token: String,
     csv_path: PathBuf,
 }
 
 #[derive(Args, Debug)]
 struct ValidatorArgs {
-    #[clap(env, help = "http-inputs-foobar.splunkcloud.com")]
+    #[clap(long, env, help = "http-inputs-foobar.splunkcloud.com")]
     splunk_hec_host: Option<String>,
-    #[clap(env)]
+    #[clap(long, env)]
     splunk_hec_token: Option<String>,
     #[clap(
         default_value = r#"/Users/a/repos/access_monitor/trufflehog/"#,
@@ -70,13 +76,16 @@ struct ValidatorArgs {
     )]
     #[clap(short)]
     trufflhog_json_path: PathBuf,
-    #[clap(short, help="filter only matching detector name")]
+    #[clap(short, long, help = "Path to repo_details.csv")]
+    repo_details_path: PathBuf,
+
+    #[clap(short, help = "filter only matching detector name")]
     detector_name: Option<String>,
-    #[clap(short, help="filter only matching repository name")]
+    #[clap(short, help = "filter only matching repository name")]
     repo_name: Option<String>,
-    #[clap(short, help="filter only matching owner name")]
-    owner_name: Option<String>,    
-    
+    #[clap(short, help = "filter only matching owner name")]
+    owner_name: Option<String>,
+
     #[clap(
         short,
         default_value = "false",
@@ -85,10 +94,38 @@ struct ValidatorArgs {
         requires = "splunk_hec_host"
     )]
     send_to_splunk: bool,
-    #[clap(short, help="run rerun validation continuiously after this delay in seconds")]    
-    rerun_interval: Option<u64> 
+    #[clap(
+        short,
+        help = "run rerun validation continuiously after this delay in seconds"
+    )]
+    rerun_interval: Option<u64>,
+    #[clap(short, default_value = "false", help = "Skip validation of secrets")]
+    no_validate: bool,
 }
 
+#[derive(Args, Debug)]
+struct SqlServerArgs {
+    #[clap(short)]
+    host: String,
+    #[clap(long)]
+    port: Option<u16>,
+    #[clap(short)]
+    initial_catalog: Option<String>,
+    #[clap(short)]
+    user_id: String,
+    #[clap(short)]
+    password: String,
+}
+
+#[derive(Args, Debug)]
+struct AzureCredentialArgs {
+    #[clap(short)]
+    client_id: String,
+    #[clap(long)]
+    client_secret: String,
+    #[clap(short)]
+    tenant_id: String,
+}
 
 fn main() -> Result<()> {
     let fmt_layer = fmt::layer().with_file(true).with_line_number(true);
@@ -107,35 +144,65 @@ fn main() -> Result<()> {
     debug!("cli arguments: {:#?}", cli);
     match cli.command {
         Commands::TrufflehogParser(trufflehog_parser_args) => {
-            let reports = TruffleHogReports::from_path(&trufflehog_parser_args.path);
+            let reports = TruffleHogReports::from_path(
+                &trufflehog_parser_args.path,
+                &trufflehog_parser_args.repo_details_path,
+            );
             let stats = reports.stats();
             dbg!(stats);
         }
-        Commands::Validator(validator_args) => tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .unwrap()
-            .block_on(async {
-                let _ = run_validator(validator_args).await;
-            }),
-        Commands::CsvParser(csv_parser_args) => tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .unwrap()
-            .block_on(async {
-                let _ = csv_parser::csv_parser(csv_parser_args).await;
-            }),
+        Commands::Validator(validator_args) => run_with_tokio(run_validator(validator_args)),
+        Commands::CsvParser(csv_parser_args) => {
+            run_with_tokio(csv_parser::csv_parser(csv_parser_args))
+        }
         Commands::TrufflehogParserListDetectors(trufflehog_parser_args) => {
-            let reports = TruffleHogReports::from_path(&trufflehog_parser_args.path);
-            let stats = reports.stats();            
+            let reports = TruffleHogReports::from_path(
+                &trufflehog_parser_args.path,
+                &trufflehog_parser_args.repo_details_path,
+            );
+            let stats = reports.stats();
             dbg!(stats.detector_stats);
+        }
+        Commands::SqlServer(sql_server_args) => {
+            let secret = MsSqlServerSecret::from(sql_server_args);
+            debug!("secret: {:#?}", secret);
+            let block = async move || {
+                let result = secret.check_secret().await;
+                info!("Sql server access: {:#?}", result);
+            };
+            run_with_tokio(block())
+        }
+        Commands::AzureCredentials(azure_credential_args) => {
+            let secret = AzureCreds::from(azure_credential_args);
+            debug!("secret: {:#?}", secret);
+            let block = async move || {
+                let result = secret.check_secret().await;
+                info!("Sql server access: {:#?}", result);
+            };
+            run_with_tokio(block())
         }
     };
     Ok(())
 }
 
+fn run_with_tokio<Fut, Out>(f: Fut)
+where
+    Fut: Future<Output = Out>,
+{
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async {
+            let _ = f.await;
+        })
+}
+
 async fn run_validator(validator_args: ValidatorArgs) -> Result<()> {
-    let reports = TruffleHogReports::from_path(&validator_args.trufflhog_json_path);
+    let reports = TruffleHogReports::from_path(
+        &validator_args.trufflhog_json_path,
+        &validator_args.repo_details_path,
+    );
 
     let splunk = if validator_args.send_to_splunk
         && let Some(host) = &validator_args.splunk_hec_host
@@ -147,39 +214,32 @@ async fn run_validator(validator_args: ValidatorArgs) -> Result<()> {
         None
     };
 
-    let iter = reports.iter()
+    let iter = reports
+        .iter()
         .by_detector_name_option(validator_args.detector_name)
         .by_repo_name_option(validator_args.repo_name)
-        .by_owner_option(validator_args.owner_name)        
-        ;
-
+        .by_owner_option(validator_args.owner_name);
 
     let mut validator_cache = ValidatorCache::new();
 
     loop {
         for report in iter.clone() {
-            // if report.secret().is_none() {
-            //     let secret = MsSqlServerSecret::try_from(dbg!(&RawV2(report.report_raw_v2())));
-            //     match secret {
-            //         Err(ParseError::UrlParseError(url::ParseError::InvalidDomainCharacter)) => continue,
-            //         Err(ParseError::UrlParseError(url::ParseError::InvalidIpv6Address)) => continue,                    
-            //         _ => (),
-                    
-            //     }
-            //     dbg!(secret);
-            //     dbg!(report);
-            //     todo!();
-            // } else {
-            //     continue;
-            // }
+            debug!("report: {:#?}", report);
 
-            let valid_now = validator_cache.check(report).await;
-            
-            let validation_report = report.validation_report(valid_now);
-            
-            dbg!(&validation_report);
+            let validation_report = if !validator_args.no_validate {
+                let valid_now = validator_cache.check(report).await;
 
-            if let Some(ref splunk) = splunk {
+                let validation_report = report.validation_report(valid_now);
+
+                debug!("Validation report: {:#?}", &validation_report);
+                Some(validation_report)
+            } else {
+                None
+            };
+
+            if let Some(ref splunk) = splunk
+                && let Some(validation_report) = validation_report
+            {
                 let mut events = Vec::new();
                 let hec_event =
                     HecEvent::new(&validation_report, "access_monitor", "access_monitor").unwrap();
@@ -187,6 +247,8 @@ async fn run_validator(validator_args: ValidatorArgs) -> Result<()> {
                 trace!("{:?}", &events);
                 let _ = splunk.send_batch(events).await;
             }
+
+            //tokio::time::sleep(Duration::from_secs(5)).await;
         }
 
         if let Some(loop_interval) = validator_args.rerun_interval {
@@ -195,6 +257,7 @@ async fn run_validator(validator_args: ValidatorArgs) -> Result<()> {
             break;
         }
     }
+
     Ok(())
 }
 
@@ -208,22 +271,21 @@ impl ValidatorCache {
             inner: HashMap::new(),
         }
     }
-    
+
     async fn check(&mut self, report: &THData) -> bool {
         let Some(cache_key) = report.secret_cache_key() else {
-            return false
+            return false;
         };
-        let cached_valid_now =  self.inner.get(&cache_key);
-        
+        let cached_valid_now = self.inner.get(&cache_key);
+
         if let Some(valid_now) = cached_valid_now {
             trace!("Credential result in cache");
             *valid_now
         } else {
-            trace!("Credential result NOT in cache - Running .check_secret()");                
+            trace!("Credential result NOT in cache - Running .check_secret()");
             let valid_now = report.check_secret().await;
             self.inner.insert(cache_key, valid_now);
             valid_now
         }
     }
-
 }

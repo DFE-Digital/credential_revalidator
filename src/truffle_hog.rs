@@ -8,6 +8,7 @@ use std::{
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use tracing::debug;
 use walkdir::WalkDir;
 
 pub struct TruffleHogReports {
@@ -18,18 +19,17 @@ pub struct TruffleHogReports {
 use std::path::PathBuf;
 
 use crate::{
-    azure_storage::AzureStorageSecret, found_secrets::SecretCreds,
+    azure::AzureCreds, azure_storage::AzureStorageSecret, found_secrets::SecretCreds,
     ms_sql_server::MsSqlServerSecret, report::SecretReportSplunk, slack_webhooks::SlackWebhook,
 };
 
 impl TruffleHogReports {
-    pub fn from_path(path: &Path) -> Self {
-        let repo_details = RepoDetails::from_file();
+    pub fn from_path(path: &Path, repo_details_path: &Path) -> Self {
+        let repo_details = RepoDetails::from_file(repo_details_path);
         let mut reports = Vec::new();
         let walker = WalkDir::new(path).into_iter();
         for entry in walker {
             let entry_path = entry.as_ref().unwrap().path();
-
             if Self::is_trufflehog_report(entry_path) {
                 let f = File::open(entry_path).unwrap();
                 let reader = BufReader::new(f).lines();
@@ -155,28 +155,25 @@ impl TruffleHogReports {
 
 pub trait THFilters<'a, T>: Iterator + Sized + Iterator<Item = &'a THData> + Clone {
     fn by_detector_name(self, detector_name: &str) -> impl Iterator<Item = &'a THData> + Clone {
-        self.filter(move |report| {
-                report.report.detector_name == *detector_name
-        }
-        )
+        self.filter(move |report| report.report.detector_name == *detector_name)
     }
-    
-    fn by_detector_name_option(self, detector_name: Option<String>) -> impl Iterator<Item = &'a THData> + Clone {
+
+    fn by_detector_name_option(
+        self,
+        detector_name: Option<String>,
+    ) -> impl Iterator<Item = &'a THData> + Clone {
         self.filter(move |report| {
             if let Some(detector_name) = detector_name.as_ref() {
                 report.report.detector_name == *detector_name
             } else {
                 true
             }
-        }
-        )
+        })
     }
 
     fn by_owner(self, owner: &str) -> impl Iterator<Item = &'a THData> + Clone {
-        self.filter(move |report| {
-                report.repo_detail.name == *owner
-        })
-    }    
+        self.filter(move |report| report.repo_detail.name == *owner)
+    }
 
     fn by_owner_option(self, owner: Option<String>) -> impl Iterator<Item = &'a THData> + Clone {
         self.filter(move |report| {
@@ -188,7 +185,10 @@ pub trait THFilters<'a, T>: Iterator + Sized + Iterator<Item = &'a THData> + Clo
         })
     }
 
-    fn by_repo_name_option(self, repo_name: Option<String>) -> impl Iterator<Item = &'a THData> + Clone {
+    fn by_repo_name_option(
+        self,
+        repo_name: Option<String>,
+    ) -> impl Iterator<Item = &'a THData> + Clone {
         self.filter(move |report| {
             if let Some(repo_name) = repo_name.as_ref() {
                 report.repo_detail.name == *repo_name
@@ -199,12 +199,8 @@ pub trait THFilters<'a, T>: Iterator + Sized + Iterator<Item = &'a THData> + Clo
     }
 
     fn by_repo_name(self, repo_name: &str) -> impl Iterator<Item = &'a THData> + Clone {
-        self.filter(move |report| {
-            report.repo_detail.name == *repo_name
-        }
-        )
-    }    
-    
+        self.filter(move |report| report.repo_detail.name == *repo_name)
+    }
 
     fn filter_private(self) -> impl Iterator<Item = &'a THData> + Clone {
         self.filter(|report| !report.is_public())
@@ -259,8 +255,8 @@ pub struct DetectorStats {
 #[test]
 fn test_truffle_hog_reports_from_path() {
     let path = PathBuf::from(".");
-    let reports = TruffleHogReports::from_path(&path);
-    // dbg!(reports.reports.len());
+    let repo_details_path = PathBuf::from(".");
+    let reports = TruffleHogReports::from_path(&path, &repo_details_path);
     let _stats = reports.stats();
 }
 
@@ -284,7 +280,7 @@ impl THData {
     pub fn detector_name(&self) -> &str {
         self.report.detector_name.as_str()
     }
-    
+
     fn is_public(&self) -> bool {
         self.repo_detail.visibility == "public"
     }
@@ -298,15 +294,12 @@ impl THData {
     }
 
     pub fn secret_cache_key(&self) -> Option<String> {
-        self.secret().map(|secret| 
-            format!("{:?}", secret)
-        )
+        self.secret().map(|secret| format!("{:?}", secret))
     }
 
     pub fn report_raw_v2(&self) -> &str {
         self.report.raw_v2.as_str()
     }
-        
 
     pub fn validation_report(&self, valid_now: bool) -> SecretReportSplunk {
         SecretReportSplunk {
@@ -368,7 +361,7 @@ impl TruffleHog {
         serde_json::from_str(line)
     }
 
-    /// The repo that the 
+    /// The repo that the
     fn repo(&self) -> &str {
         &self.source_metadata.data.github.repository
     }
@@ -383,13 +376,17 @@ impl TruffleHog {
                 SecretCreds::AzureStorage(secret)
             }
             "SQLServer" => {
-                let secret = MsSqlServerSecret::try_from(dbg!(&RawV2(self.raw_v2.as_str()))).ok()?;
-                dbg!(&secret);
+                let raw_v2 = RawV2(self.raw_v2.as_str());
+                let secret = MsSqlServerSecret::try_from(&raw_v2).ok()?;
                 SecretCreds::MsSqlServer(secret)
             }
             "SlackWebhook" => {
                 let secret = SlackWebhook::try_from(self.raw.as_str()).ok()?;
                 SecretCreds::SlackWebhook(secret)
+            }
+            "Azure" => {
+                let secret = self.raw_v2_deserialize().ok()?;
+                SecretCreds::Azure(secret)
             }
             _ => return None,
         };
@@ -519,8 +516,8 @@ fn load_truffle_hog_json() {
 }
 
 impl RepoDetails {
-    fn from_file() -> Self {
-        let mut rdr = csv::Reader::from_path("repo_details.csv").unwrap();
+    fn from_file(path: &Path) -> Self {
+        let mut rdr = csv::Reader::from_path(path).unwrap();
         let mut inner = Vec::new();
         let mut clone_url_map = HashMap::new();
         for result in rdr.deserialize() {
@@ -569,7 +566,8 @@ struct RepoDetail {
 
 #[test]
 fn test_repo_details() {
-    let rd = RepoDetails::from_file();
+    let repo_details_path = PathBuf::from(".");
+    let rd = RepoDetails::from_file(&repo_details_path);
     assert!(rd.inner.len() > 0);
 }
 

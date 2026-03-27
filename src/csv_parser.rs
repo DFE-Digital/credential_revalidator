@@ -14,13 +14,12 @@ pub async fn csv_parser(csv_parser_args: CsvParserArgs) -> Result<()> {
     let splunk = data_ingester_splunk::splunk::Splunk::new(
         &csv_parser_args.splunk_hec_host,
         &csv_parser_args.splunk_hec_token,
-        
         false,
-    )    .unwrap();
-
+    )
+    .unwrap();
 
     let path = csv_parser_args.csv_path;
-    
+
     let mut rdr = csv::Reader::from_path(path).unwrap();
 
     for result in rdr.deserialize() {

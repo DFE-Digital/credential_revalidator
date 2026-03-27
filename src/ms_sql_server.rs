@@ -8,7 +8,7 @@ use tokio::net::TcpStream;
 use tokio_util::compat::TokioAsyncWriteCompatExt;
 use url::Url;
 
-use crate::{found_secrets::SecretCheck, truffle_hog::RawV2};
+use crate::{SqlServerArgs, found_secrets::SecretCheck, truffle_hog::RawV2};
 
 #[derive(Debug, PartialEq, Eq, Clone, Deserialize)]
 pub struct MsSqlServerSecret {
@@ -29,11 +29,22 @@ pub struct MsSqlServerSecret {
 pub enum ParseError {
     #[error("Error parsing Trufflehog rawv2 url")]
     UrlParseError(#[from] url::ParseError),
-    #[error("Missing component from Trufflehog rawv2 url: {0}")]    
+    #[error("Missing component from Trufflehog rawv2 url: {0}")]
     MissingComponent(String),
-    #[error("Unable to url decode username")]        
+    #[error("Unable to urldecode String")]
     Urlencoding(#[from] std::string::FromUtf8Error),
-        
+}
+
+impl From<SqlServerArgs> for MsSqlServerSecret {
+    fn from(value: SqlServerArgs) -> Self {
+        Self {
+            host: value.host,
+            port: value.port,
+            initial_catalog: value.initial_catalog,
+            user_id: value.user_id,
+            password: value.password,
+        }
+    }
 }
 
 impl TryFrom<String> for MsSqlServerSecret {
@@ -49,20 +60,31 @@ impl TryFrom<&RawV2<'_>> for MsSqlServerSecret {
 
     fn try_from(value: &RawV2) -> std::result::Result<Self, Self::Error> {
         let url = Url::parse(value.0)?;
-        let host = url.host().map(|h| h.to_string()).ok_or(ParseError::MissingComponent("host".to_string()))?;
+        let host = url
+            .host()
+            .map(|h| h.to_string())
+            .ok_or(ParseError::MissingComponent("host".to_string()))?;
         let port = url.port();
         let user_id = {
+            let decoded = urlencoding::decode(url.username())?;
+
             // Trufflehog doesn't parse urlencoded '@'s in urls properly. They can be hidden in the username
             // e.g "foo%40host:password@host" usernames should be "foo" but trufflehog logs it as "foo%40host"
-            let decoded = urlencoding::decode(url.username())?;
-            decoded.split('@').next().map(|s| s.to_string()).ok_or(ParseError::MissingComponent("username".to_string()))?
+            // decoded.split('@').next().map(|s| s.to_string()).ok_or(ParseError::MissingComponent("username".to_string()))?
+            decoded.into_owned()
         };
-        
+
         let initial_catalog = find_query_pair_value(&url, "database");
-        let password = url.password().map(|p| p.to_string()).ok_or(ParseError::MissingComponent("password".to_string()))?;
+        let password = {
+            let password = url
+                .password()
+                .ok_or(ParseError::MissingComponent("password".to_string()))?;
+            let decoded = urlencoding::decode(password)?;
+            decoded.into_owned()
+        };
         Ok(Self {
             host,
-            port, 
+            port,
             initial_catalog,
             user_id,
             password,
@@ -71,7 +93,9 @@ impl TryFrom<&RawV2<'_>> for MsSqlServerSecret {
 }
 
 fn find_query_pair_value(url: &Url, key: &str) -> Option<String> {
-    url.query_pairs().find(|pair| pair.0 == key).map(|pair| pair.1.into_owned())
+    url.query_pairs()
+        .find(|pair| pair.0 == key)
+        .map(|pair| pair.1.into_owned())
 }
 
 impl TryFrom<&str> for MsSqlServerSecret {
@@ -86,7 +110,12 @@ impl TryFrom<&str> for MsSqlServerSecret {
                 map.insert(k, v);
             }
         }
-        let server = map.get("Server").map(|s| s.to_string()).ok_or(ParseError::MissingComponent("No Storage account key".into()))?;
+        let server =
+            map.get("Server")
+                .map(|s| s.to_string())
+                .ok_or(ParseError::MissingComponent(
+                    "No Storage account key".into(),
+                ))?;
 
         let host = server
             .split(":")
@@ -101,12 +130,10 @@ impl TryFrom<&str> for MsSqlServerSecret {
             .nth(1)
             .ok_or(ParseError::MissingComponent("port".into()))?
             .parse()
-            .map_err(|_err| ParseError::
-                     MissingComponent("port".into()))?;
-        let initial_catalog =
-            map.get("Initial Catalog")
-                .map(|s| s.to_string())
-                .ok_or(ParseError::MissingComponent("initial catalog/database".into()))?;
+            .map_err(|_err| ParseError::MissingComponent("port".into()))?;
+        let initial_catalog = map.get("Initial Catalog").map(|s| s.to_string()).ok_or(
+            ParseError::MissingComponent("initial catalog/database".into()),
+        )?;
 
         let user_id = map
             .get("User ID")
@@ -115,7 +142,7 @@ impl TryFrom<&str> for MsSqlServerSecret {
         let password = map
             .get("Password")
             .map(|s| s.to_string())
-                   .ok_or(ParseError::MissingComponent("password".into()))?;
+            .ok_or(ParseError::MissingComponent("password".into()))?;
 
         Ok(MsSqlServerSecret {
             //server,
@@ -165,7 +192,7 @@ impl SecretCheck for MsSqlServerSecret {
         if let Some(initial_catalog) = &self.initial_catalog {
             config.database(initial_catalog);
         }
-        
+
         config.encryption(tiberius::EncryptionLevel::Required);
 
         let tcp = TcpStream::connect(config.get_addr()).await?;
@@ -185,7 +212,7 @@ impl SecretCheck for MsSqlServerSecret {
                 if let Some(initial_catalog) = &self.initial_catalog {
                     config.database(initial_catalog);
                 }
-                
+
                 config.encryption(tiberius::EncryptionLevel::Required);
 
                 let tcp = TcpStream::connect(config.get_addr()).await?;

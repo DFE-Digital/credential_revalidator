@@ -2,7 +2,7 @@ use anyhow::Result;
 use serde::Deserialize;
 
 use crate::{
-    azure_storage::AzureStorageSecret, ms_sql_server::MsSqlServerSecret,
+    azure::AzureCreds, azure_storage::AzureStorageSecret, ms_sql_server::MsSqlServerSecret,
     slack_webhooks::SlackWebhook,
 };
 
@@ -122,6 +122,7 @@ use crate::{
 
 #[derive(Debug, Clone, Deserialize)]
 pub enum SecretCreds {
+    Azure(AzureCreds),
     AzureStorage(AzureStorageSecret),
     MsSqlServer(MsSqlServerSecret),
     SlackWebhook(SlackWebhook),
@@ -130,6 +131,7 @@ pub enum SecretCreds {
 impl SecretCreds {
     pub async fn check_secret(&self) -> Result<()> {
         match self {
+            SecretCreds::Azure(foundsecret) => foundsecret.check_secret().await,
             SecretCreds::AzureStorage(foundsecret) => foundsecret.check_secret().await,
             SecretCreds::MsSqlServer(foundsecret) => foundsecret.check_secret().await,
             SecretCreds::SlackWebhook(foundsecret) => foundsecret.check_secret().await,
