@@ -74,15 +74,15 @@ struct ValidatorArgs {
         requires = "splunk_hec_host"
     )]
     send_to_splunk: bool,
-    #[clap(long, env, help = "http-inputs-foobar.splunkcloud.com")]
+    #[clap(long, env, help = "Splunk HEC endpoint: e.g http-inputs-foobar.splunkcloud.com")]
     splunk_hec_host: Option<String>,
-    #[clap(long, env)]
+    #[clap(long, env, help = "Splunk HEC token")]
     splunk_hec_token: Option<String>,
     #[clap(
-        default_value = r#"/Users/a/repos/access_monitor/trufflehog/"#,
+        default_value = r#"."#,
         help = "The path to the directory containing all Trufflehog logs"
     )]
-    #[clap(long)]
+    #[clap(long, help= "path to the root of the TruffleHog JSON files")]
     trufflhog_json_path: PathBuf,
     #[clap(long, help = "Path to repo_details.csv")]
     repo_details_path: PathBuf,
