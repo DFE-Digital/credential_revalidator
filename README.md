@@ -25,7 +25,7 @@ Splunk HEC endpoint: e.g http-inputs-foobar.splunkcloud.com [env: SPLUNK_HEC_HOS
 Splunk HEC token [env: SPLUNK_HEC_TOKEN=]
 
 
---trufflhog-json-path <TRUFFLHOG_JSON_PATH>
+--trufflehog-json-path <TRUFFLHOG_JSON_PATH>
 
 path to the root of the TruffleHog JSON files [default: "."]
 

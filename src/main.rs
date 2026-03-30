@@ -83,7 +83,7 @@ struct ValidatorArgs {
         help = "The path to the directory containing all Trufflehog logs"
     )]
     #[clap(long, help= "path to the root of the TruffleHog JSON files")]
-    trufflhog_json_path: PathBuf,
+    trufflehog_json_path: PathBuf,
     #[clap(long, help = "Path to repo_details.csv")]
     repo_details_path: PathBuf,
 
@@ -200,7 +200,7 @@ where
 
 async fn run_validator(validator_args: ValidatorArgs) -> Result<()> {
     let reports = TruffleHogReports::from_path(
-        &validator_args.trufflhog_json_path,
+        &validator_args.trufflehog_json_path,
         &validator_args.repo_details_path,
     );
 
