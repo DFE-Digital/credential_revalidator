@@ -7,6 +7,8 @@ pub struct SecretReportSplunk {
     pub link: String,
     pub file: Option<String>,
     pub commit: String,
+    /// A higher score indicates this result is more likely to be a false positive
+    pub false_positive_score: isize,
     pub valid_from_trufflehog: bool,
     pub valid_now: bool,
     pub repo_public: bool,

@@ -321,6 +321,11 @@ impl THData {
             repo_archived: self.repo_detail.archived,
             repo_owner: self.repo_detail.owner.to_string(),
             repo_name: self.repo_detail.name.to_string(),
+            false_positive_score: self
+                .secret
+                .as_ref()
+                .map(|s| s.false_positive())
+                .unwrap_or_default(),
         }
     }
 
@@ -335,7 +340,7 @@ impl THData {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "PascalCase")]
-struct TruffleHog {
+pub struct TruffleHog {
     decoder_name: String,
     detector_description: String,
     detector_name: String,
@@ -387,6 +392,10 @@ impl TruffleHog {
             "Azure" => {
                 let secret = self.raw_v2_deserialize().ok()?;
                 SecretCreds::Azure(secret)
+            }
+            "URI" => {
+                let secret = self.try_into().ok()?;
+                SecretCreds::Uri(secret)
             }
             _ => return None,
         };

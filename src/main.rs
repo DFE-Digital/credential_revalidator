@@ -1,3 +1,4 @@
+#![feature(ip)]
 use anyhow::Context;
 use anyhow::Result;
 use azure::AzureCreds;
@@ -29,6 +30,7 @@ mod ms_sql_server;
 mod report;
 mod slack_webhooks;
 mod truffle_hog;
+mod uri;
 use tracing::{debug, info, trace};
 
 #[derive(Parser, Debug)]
@@ -74,7 +76,11 @@ struct ValidatorArgs {
         requires = "splunk_hec_host"
     )]
     send_to_splunk: bool,
-    #[clap(long, env, help = "Splunk HEC endpoint: e.g http-inputs-foobar.splunkcloud.com")]
+    #[clap(
+        long,
+        env,
+        help = "Splunk HEC endpoint: e.g http-inputs-foobar.splunkcloud.com"
+    )]
     splunk_hec_host: Option<String>,
     #[clap(long, env, help = "Splunk HEC token")]
     splunk_hec_token: Option<String>,
@@ -82,7 +88,7 @@ struct ValidatorArgs {
         default_value = r#"."#,
         help = "The path to the directory containing all Trufflehog logs"
     )]
-    #[clap(long, help= "path to the root of the TruffleHog JSON files")]
+    #[clap(long, help = "path to the root of the TruffleHog JSON files")]
     trufflehog_json_path: PathBuf,
     #[clap(long, help = "Path to repo_details.csv")]
     repo_details_path: PathBuf,
@@ -234,8 +240,16 @@ async fn run_validator(validator_args: ValidatorArgs) -> Result<()> {
                 debug!("Validation report: {:#?}", &validation_report);
                 Some(validation_report)
             } else {
-                None
+                Some(report.validation_report(false))
             };
+            let false_positive_score = validation_report.as_ref().unwrap().false_positive_score;
+            if false_positive_score < 80 {
+                println!(
+                    "{}: {}",
+                    report.report_raw_v2(),
+                    validation_report.as_ref().unwrap().false_positive_score
+                );
+            }
 
             if let Some(ref splunk) = splunk
                 && let Some(validation_report) = validation_report
@@ -256,6 +270,10 @@ async fn run_validator(validator_args: ValidatorArgs) -> Result<()> {
         } else {
             break;
         }
+    }
+
+    if validator_args.send_to_splunk {
+        tokio::time::sleep(Duration::from_secs(30)).await;
     }
 
     Ok(())
