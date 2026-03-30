@@ -43,7 +43,6 @@ jobs:
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: nightly-2026-03-30
-          targets: x86_64-unknown-linux-musl
 
       - name: Cache build artifacts
         uses: actions/cache@v4
@@ -68,8 +67,7 @@ jobs:
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: nightly-2026-03-30
-          targets: x86_64-unknown-linux-musl
-          components: rust-fmt
+          components: rustfmt
 
       - name: Cache build artifacts
         uses: actions/cache@v4
@@ -94,7 +92,6 @@ jobs:
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: nightly-2026-03-30
-          targets: x86_64-unknown-linux-musl
           components: clippy
 
       - name: Cache build artifacts
@@ -120,7 +117,6 @@ jobs:
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: nightly-2026-03-30
-          targets: x86_64-unknown-linux-musl
 
       - name: Cache build artifacts
         uses: actions/cache@v4
@@ -146,7 +142,6 @@ jobs:
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: nightly-2026-03-30
-          targets: x86_64-unknown-linux-musl
 
       - name: Cache build artifacts
         uses: actions/cache@v4

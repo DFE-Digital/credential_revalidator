@@ -566,7 +566,7 @@ struct RepoDetail {
 
 #[test]
 fn test_repo_details() {
-    let repo_details_path = PathBuf::from(".");
+    let repo_details_path = PathBuf::from("tests/test_repo_details.csv");
     let rd = RepoDetails::from_file(&repo_details_path);
     assert!(rd.inner.len() > 0);
 }

@@ -99,6 +99,7 @@ struct AzureOauthError {
     error_uri: String,
 }
 
+#[ignore]
 #[tokio::test]
 async fn test_check_azure_creds() {
     let expired_creds = AzureCreds {

@@ -3,41 +3,6 @@
 version = 4
 
 [[package]]
-name = "access_monitor"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "azure_core",
- "azure_identity",
- "azure_storage_blob",
- "base64 0.22.1",
- "chrono",
- "clap",
- "csv",
- "data_ingester_splunk",
- "futures",
- "hex-literal",
- "hmac",
- "regex",
- "reqwest 0.12.28",
- "serde",
- "serde_json",
- "sha1",
- "sha2",
- "thiserror 2.0.18",
- "tiberius",
- "tokio",
- "tokio-util",
- "tracing",
- "tracing-subscriber",
- "typespec_client_core",
- "url",
- "urlencoding",
- "walkdir",
-]
-
-[[package]]
 name = "adler2"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -463,6 +428,41 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9481c1c90cbf2ac953f07c8d4a58aa3945c425b7185c9154d67a65e4230da511"
 dependencies = [
  "cfg-if",
+]
+
+[[package]]
+name = "credential_revalidator"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "azure_core",
+ "azure_identity",
+ "azure_storage_blob",
+ "base64 0.21.7",
+ "chrono",
+ "clap",
+ "csv",
+ "data_ingester_splunk",
+ "futures",
+ "hex-literal",
+ "hmac",
+ "regex",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "sha1",
+ "sha2",
+ "thiserror 1.0.69",
+ "tiberius",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+ "typespec_client_core",
+ "url",
+ "urlencoding",
+ "walkdir",
 ]
 
 [[package]]

@@ -66,6 +66,14 @@ struct CsvParserArgs {
 
 #[derive(Args, Debug)]
 struct ValidatorArgs {
+    #[clap(
+        long,
+        default_value = "false",
+        help = "Send validation reports to Splunk",
+        requires = "splunk_hec_token",
+        requires = "splunk_hec_host"
+    )]
+    send_to_splunk: bool,
     #[clap(long, env, help = "http-inputs-foobar.splunkcloud.com")]
     splunk_hec_host: Option<String>,
     #[clap(long, env)]
@@ -74,32 +82,24 @@ struct ValidatorArgs {
         default_value = r#"/Users/a/repos/access_monitor/trufflehog/"#,
         help = "The path to the directory containing all Trufflehog logs"
     )]
-    #[clap(short)]
+    #[clap(long)]
     trufflhog_json_path: PathBuf,
-    #[clap(short, long, help = "Path to repo_details.csv")]
+    #[clap(long, help = "Path to repo_details.csv")]
     repo_details_path: PathBuf,
 
-    #[clap(short, help = "filter only matching detector name")]
+    #[clap(long, help = "filter only matching detector name")]
     detector_name: Option<String>,
-    #[clap(short, help = "filter only matching repository name")]
+    #[clap(long, help = "filter only matching repository name")]
     repo_name: Option<String>,
-    #[clap(short, help = "filter only matching owner name")]
+    #[clap(long, help = "filter only matching owner name")]
     owner_name: Option<String>,
 
     #[clap(
-        short,
-        default_value = "false",
-        help = "Send validation reports to Splunk",
-        requires = "splunk_hec_token",
-        requires = "splunk_hec_host"
-    )]
-    send_to_splunk: bool,
-    #[clap(
-        short,
+        long,
         help = "run rerun validation continuiously after this delay in seconds"
     )]
     rerun_interval: Option<u64>,
-    #[clap(short, default_value = "false", help = "Skip validation of secrets")]
+    #[clap(long, default_value = "false", help = "Skip validation of secrets")]
     no_validate: bool,
 }
 

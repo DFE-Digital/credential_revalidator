@@ -165,17 +165,11 @@ fn test_ms_sql_server_secret_try_from_string() {
     let test_s = "Server=tcp:foo.database.windows.net,1433;Initial Catalog=foo-dev;Persist Security Info=False;User ID=foo_user;Password=foopass;MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;";
     let result = MsSqlServerSecret::try_from(test_s).unwrap();
     let expected = MsSqlServerSecret {
-        server: "tcp:foo.database.windows.net,1433".into(),
         host: "foo.database.windows.net".into(),
-        port: 1433,
-        initial_catalog: "foo-dev".into(),
-        persist_security_info: true,
+        port: Some(1433),
+        initial_catalog: Some("foo-dev".into()),
         user_id: "foo_user".into(),
         password: "foopass".into(),
-        multiple_active_result_sets: true,
-        encrypt: true,
-        trust_server_certificate: true,
-        connection_timeout: 0,
     };
     assert_eq!(result, expected);
 }
